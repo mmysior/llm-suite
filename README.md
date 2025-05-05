@@ -1,4 +1,4 @@
-# LLM Suite
+# 🔧 LLM Suite
 
 A Python package for streamlined interactions with various Large Language Model (LLM) providers, featuring structured output parsing and template-based prompt management.
 
