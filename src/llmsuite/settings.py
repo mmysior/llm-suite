@@ -1,13 +1,7 @@
 from functools import lru_cache
-from pathlib import Path
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# Centralize env file path
-root_dir = Path(__file__).parent.parent.parent
-env_file_path = root_dir / ".env"
 
 
 class PromptSettings(BaseSettings):
@@ -20,9 +14,7 @@ class LLMProviderSettings(BaseSettings):
     top_p: float | None = Field(alias="DEFAULT_TOP_P", default=None)
     max_retries: int = 3
 
-    model_config = SettingsConfigDict(
-        env_file=env_file_path, env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class OpenAISettings(LLMProviderSettings):
@@ -73,9 +65,7 @@ class Settings(BaseSettings):
     perplexity: PerplexitySettings = PerplexitySettings()
     together: TogetherAISettings = TogetherAISettings()
 
-    model_config = SettingsConfigDict(
-        env_file=env_file_path, env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 @lru_cache
