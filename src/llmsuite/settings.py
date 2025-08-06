@@ -15,9 +15,9 @@ class PromptSettings(BaseSettings):
 
 
 class LLMProviderSettings(BaseSettings):
-    temperature: float | None = None
-    max_tokens: int | None = None
-    top_p: float | None = None
+    temperature: float | None = Field(alias="DEFAULT_TEMPERATURE", default=None)
+    max_tokens: int | None = Field(alias="DEFAULT_MAX_TOKENS", default=None)
+    top_p: float | None = Field(alias="DEFAULT_TOP_P", default=None)
     max_retries: int = 3
 
     model_config = SettingsConfigDict(
