@@ -167,7 +167,11 @@ def init_chat_model(
     model: Optional[str] = None, provider: Optional[str] = None
 ) -> ChatModelProtocol:
     provider = provider or get_settings().default_provider
+    if not provider:
+        raise ValueError("Provider must be specified or set in DEFAULT_PROVIDER env variable.")
     model = model or get_settings().default_model
+    if not model:
+        raise ValueError("Model must be specified or set in DEFAULT_MODEL env variable.")
 
     logger.debug(f"Initializing chat model with provider: {provider}, model: {model}")
 
