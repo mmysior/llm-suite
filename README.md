@@ -30,39 +30,47 @@ pip install -e .
 Configuration is handled through environment variables. Update your `.env` file with your API keys:
 
 ```env
-# VARIABLE=value 
-OPENAI_API_KEY=
-GROQ_API_KEY=
-ANTHROPIC_API_KEY=
-DEEPSEEK_API_KEY=
-GEMINI_API_KEY=
-PERPLEXITY_API_KEY=
-HUGGINGFACE_API_KEY=
-MISTRAL_API_KEY=
-
-# Default location of prompt templates
 TEMPLATES_DIR="./prompts"
+
+# LLM settings
+DEFAULT_PROVIDER="openai"
+DEFAULT_MODEL="gpt-4.1-mini"
+
+DEFAULT_TEMPERATURE=0.7
+DEFAULT_TOP_P=1.0
+DEFAULT_MAX_TOKENS=2048
+
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+PERPLEXITY_API_KEY=
+GROQ_API_KEY=
+TOGETHER_API_KEY=
+
+OLLAMA_BASE_URL=
+LMSTUDIO_BASE_URL=
 ```
 
 Available configuration options:
-- `TEMPLATES_DIR` - Custom directory for prompt templates (defaults to package's templates directory)
+- `TEMPLATES_DIR` - Custom directory for prompt templates (defaults to package's templates directory).
+- `DEFAULT_PROVIDER` - A provider used if no other is explicitly defined at LLMSuite initialization.
+- `DEFAULT MODEL` - A default model to use when calling methods on LLMSuite class.
 
 ## Usage
 
 ### LLM Service
 
 ```python
-from llmsuite.services.llm_service import LLMService
+from llmsuite import LLMSuite
 
-# Initialize with your preferred provider
-llm = LLMService(provider="openai")
+# Initialize with your preferred provider (the value will be loaded from the .env file)
+llm = LLMSuite() # Loads the provider as specified in the .env file
 
 # Simple chat completion
 messages = [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Explain quantum computing briefly."}
 ]
-response = llm.create_chat_completion(messages)
+response = llm.create_chat_completion(messages) # Uses the default model specified in .env file
 print(response)
 
 # Structured output with Pydantic
@@ -87,13 +95,10 @@ print(f"Title: {result.title}, Year: {result.year}")
 ### Prompt Manager
 
 ```python
-from llmsuite.prompts.prompt_manager import PromptManager
-
-# Initialize the prompt manager
-pm = PromptManager()
+from llmsuite import get_prompt
 
 # Get a prompt template
-prompt = pm.get_prompt("my_template")
+prompt get_prompt("my_template")
 
 # Render the template with variables
 rendered_prompt = prompt.compile(variable1="value1", variable2="value2")

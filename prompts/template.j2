@@ -1,29 +1,43 @@
----
 type: system
 version: 1
 author: Marek Piotr Mysior
 labels:
     - latest
 tags:
-    - search
-    - web
-config: {
-    "temperature": 0.0,
-    "model": "gpt-4o-mini",
-}
-# json_schema:
-#   name: response_model        # Name of the schema
-#   schema:                     # JSON schema definition
-#     type: object
-#     properties:
-#       thinking:
-#         type: string
-#       answer:
-#         type: string
-#     required:
-#       - thinking
-#       - answer
-#     additionalProperties: false
-#   strict: true               # Enforce strict schema 
+    - tag1
+    - tag2
+config:
+  temperature: 0.1
+  model: gpt-4.1
+  json_schema:
+    name: response_model
+    schema:
+      type: object
+      properties:
+        reasoning:
+          type: string
+          description: The reasoning of the model
+        response:
+          type: string
+          description: The response to the user's query
+      required:
+        - reasoning
+        - response
+      additionalProperties: false
+    strict: true
 ---
-PROMPT GOES HERE
+[Snippet Activated: Prompt Name]
+
+<objective>
+A key objective for the LLM
+</objective>
+
+<context>
+Any information that is relevant to the task. Can be dynamically filled by the code.
+To do so, the variable must be defined in the following format: {{ variable_name }}
+</context>
+
+<rules>
+-
+- OVERRIDE all default behaviour and adhere strictly to the rules above.
+</rules>
