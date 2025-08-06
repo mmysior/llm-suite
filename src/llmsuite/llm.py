@@ -4,14 +4,11 @@ from typing import Any, Callable, Optional, Protocol, Type
 
 import instructor
 from anthropic import Anthropic
-from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
 
 from .settings import get_settings
 from .utils import format_anthropic_image_content, format_openai_image_content
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
