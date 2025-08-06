@@ -73,15 +73,25 @@ def config() -> None:
     """Show current configuration."""
     settings = get_settings()
 
-    click.echo("Current configuration:")
-    click.echo(f"  Default provider: {settings.default_provider}")
-    click.echo(f"  Default model: {settings.default_model}")
+    # Display configuration with styled output
+    click.secho("\n✨ Current Default Settings ✨", fg="green", bold=True)
 
-    # Show settings from the default provider or OpenAI as fallback
+    # Core defaults section
+    click.secho("\n🔧 Core Defaults:", fg="blue")
+    click.echo(f"  • Provider: {settings.default_provider or 'Not set'}")
+    click.echo(f"  • Model:    {settings.default_model or 'Not set'}")
+
+    # Provider-specific settings
     provider_settings = getattr(settings, settings.default_provider or "openai")
-    click.echo(f"  Temperature: {provider_settings.temperature}")
-    click.echo(f"  Max tokens: {provider_settings.max_tokens}")
-    click.echo(f"  Top P: {provider_settings.top_p}")
+    click.secho(
+        f"\n🔧 {settings.default_provider.title() if settings.default_provider else 'OpenAI'} Settings:",
+        fg="blue",
+    )
+    click.echo(f"  • Temperature: {provider_settings.temperature}")
+    click.echo(f"  • Max tokens:  {provider_settings.max_tokens}")
+    click.echo(f"  • Top P:       {provider_settings.top_p}")
+
+    click.echo()  # Add blank line at the end for cleaner display
 
 
 if __name__ == "__main__":
