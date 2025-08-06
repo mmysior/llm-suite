@@ -1,20 +1,70 @@
+from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Optional, Type, cast
+from typing import Any, Callable, Optional, Protocol, Type
 
 import instructor
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from instructor import Instructor
 from openai import OpenAI
 from pydantic import BaseModel
 
-from .settings import LLMProviderSettings, get_settings
+from .settings import get_settings
 from .utils import format_anthropic_image_content, format_openai_image_content
 
 load_dotenv()
 
+
+class MessageBuilder(Protocol):
+    def __call__(
+        self, text: str, image_path: Optional[Path] = None, system_prompt: Optional[str] = None
+    ) -> list[dict]: ...
+
+
+class ChatFunc(Protocol):
+    def __call__(self, messages: list[dict], **kwargs) -> str: ...
+
+
+class ExtractFunc(Protocol):
+    def __call__(self, messages: list[dict], schema: Type[BaseModel], **kwargs) -> Any: ...
+
+
 type LLMClient = OpenAI | Anthropic
 type CompletionFunc = Callable[[LLMClient, dict], str]
+
+
+# ------------------------------------------------------------------------------
+# Chatter function
+# ------------------------------------------------------------------------------
+
+
+def chatter(client: LLMClient) -> CompletionFunc:
+    def get_openai_completion(client: OpenAI, completion_params: dict) -> str:
+        try:
+            completion = client.chat.completions.create(**completion_params)
+            return completion.choices[0].message.content or ""
+        except Exception as e:
+            raise RuntimeError(f"OpenAI completion failed: {e}")
+
+    def get_anthropic_completion(client: Anthropic, completion_params: dict) -> str:
+        try:
+            params = completion_params.copy()
+            messages = params.pop("messages")
+
+            if messages and messages[0]["role"] == "system":
+                params["system"] = messages[0]["content"]
+                messages = messages[1:]
+
+            completion = client.messages.create(messages=messages, **params)
+            return completion.content[0].text
+        except Exception as e:
+            raise RuntimeError(f"Anthropic completion failed: {e}")
+
+    if isinstance(client, OpenAI):
+        return get_openai_completion
+    elif isinstance(client, Anthropic):
+        return get_anthropic_completion
+    else:
+        raise ValueError(f"Unsupported client type: {type(client)}")
 
 
 # ------------------------------------------------------------------------------
@@ -22,105 +72,104 @@ type CompletionFunc = Callable[[LLMClient, dict], str]
 # ------------------------------------------------------------------------------
 
 
-def chatter(client: LLMClient) -> CompletionFunc:
-    def get_openai_completion(client: OpenAI, completion_params: dict) -> str:
-        completion = client.chat.completions.create(**completion_params)
-        return completion.choices[0].message.content
+def get_client(provider: str) -> LLMClient:
+    settings = getattr(get_settings(), provider)
 
-    def get_anthropic_completion(client: Anthropic, completion_params: dict) -> str:
-        messages = completion_params.pop("messages")
-        if messages and messages[0]["role"] == "system":
-            completion_params["system"] = messages[0]["content"]
-            messages = messages[1:]
-        completion = client.messages.create(messages=messages, **completion_params)
-        return completion.content[0].text
+    client_initializers = {
+        "openai": lambda s: OpenAI(api_key=s.api_key),
+        "ollama": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
+        "groq": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
+        "perplexity": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
+        "lmstudio": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
+        "anthropic": lambda s: Anthropic(api_key=s.api_key),
+        "together": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
+    }
+
+    initializer = client_initializers.get(provider)
+    if initializer:
+        print(f"Initializing {provider} client")
+        return initializer(settings)
+    raise ValueError(f"Unsupported LLM provider: {provider}")
+
+
+def build_messages(
+    text: str,
+    provider: str,
+    image_path: Optional[Path] = None,
+    system_prompt: Optional[str] = None,
+) -> list[dict]:
+    messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
+    if not image_path:
+        messages.append({"role": "user", "content": text})
+    else:
+        if provider == "anthropic":
+            messages.extend(format_anthropic_image_content(text, image_path))
+        else:
+            messages.extend(format_openai_image_content(text, image_path))
+    return messages
+
+
+# ------------------------------------------------------------------------------
+# Completion functions
+# ------------------------------------------------------------------------------
+
+
+def chat(messages: list[dict], model: str, provider: str, **kwargs) -> str:
+    settings = getattr(get_settings(), provider)
+    client = get_client(provider)
+
+    completion_params = {
+        "model": model,
+        "temperature": kwargs.get("temperature", settings.temperature),
+        "top_p": kwargs.get("top_p", settings.top_p),
+        "max_tokens": kwargs.get("max_tokens", settings.max_tokens),
+        "messages": messages,
+    }
+
+    completion_func = chatter(client)
+    return completion_func(client, completion_params)
+
+
+def extract(
+    messages: list[dict], schema: Type[BaseModel], model: str, provider: str, **kwargs
+) -> Any:
+    settings = getattr(get_settings(), provider)
+    client = get_client(provider)
+
+    completion_params = {
+        "model": model,
+        "temperature": kwargs.get("temperature", settings.temperature),
+        "top_p": kwargs.get("top_p", settings.top_p),
+        "max_tokens": kwargs.get("max_tokens", settings.max_tokens),
+        "messages": messages,
+    }
 
     if isinstance(client, OpenAI):
-        return cast(CompletionFunc, get_openai_completion)
-    return cast(CompletionFunc, get_anthropic_completion)
+        patched_client = instructor.from_openai(client)
+    elif isinstance(client, Anthropic):
+        patched_client = instructor.from_anthropic(client)
+    else:
+        raise ValueError(f"Unsupported client for patching: {type(client)}")
+
+    return patched_client.chat.completions.create(response_model=schema, **completion_params)
 
 
 # ------------------------------------------------------------------------------
-# LLMSuite
+# LLMSuite Factory
 # ------------------------------------------------------------------------------
 
 
-class LLMSuite:
-    def __init__(self, provider: Optional[str] = None, model: Optional[str] = None):
-        self.provider: str = provider or get_settings().default_provider
-        self.model: str = model or get_settings().default_model
-        self.settings: LLMProviderSettings = getattr(get_settings(), self.provider)
-        self.client: LLMClient = self._initialize_client()
+def init_chat_model(model: Optional[str] = None, provider: Optional[str] = None):
+    provider = provider or get_settings().default_provider
+    model = model or get_settings().default_model
 
-    def _initialize_client(self) -> LLMClient:
-        client_initializers = {
-            "openai": lambda s: OpenAI(api_key=s.api_key),
-            "ollama": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
-            "groq": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
-            "perplexity": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
-            "lmstudio": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
-            "anthropic": lambda s: Anthropic(api_key=s.api_key),
-            "together": lambda s: OpenAI(base_url=s.base_url, api_key=s.api_key),
-        }
+    class ChatModel:
+        def __init__(self, provider: str, model: str):
+            self._provider: str = provider
+            self._model: str = model
 
-        initializer = client_initializers.get(self.provider)
-        if initializer:
-            print(f"Initializing {self.provider} client with model: {self.model}")
-            return initializer(self.settings)
-        raise ValueError(f"Unsupported LLM provider: {self.provider}")
+            self.build_messages: MessageBuilder = partial(build_messages, provider=self._provider)
+            self.chat: ChatFunc = partial(chat, provider=self._provider, model=self._model)
+            self.extract: ExtractFunc = partial(extract, provider=self._provider, model=self._model)
 
-    def _get_patched_client(self) -> Instructor:
-        if isinstance(self.client, OpenAI):
-            return instructor.from_openai(self.client)
-        elif isinstance(self.client, Anthropic):
-            return instructor.from_anthropic(self.client)
-        else:
-            raise ValueError(f"Unsupported client for patching: {type(self.client)}")
-
-    def build_messages(
-        self,
-        text: str,
-        image_path: Optional[Path] = None,
-        system_prompt: Optional[str] = None,
-    ) -> list[dict]:
-        messages = (
-            [{"role": "system", "content": system_prompt}] if system_prompt else []
-        )
-        if not image_path:
-            messages.append({"role": "user", "content": text})
-        else:
-            if self.provider == "anthropic":
-                messages.extend(format_anthropic_image_content(text, image_path))
-            else:
-                messages.extend(format_openai_image_content(text, image_path))
-        return messages
-
-    def create_chat_completion(self, messages: list[dict], **kwargs) -> str:
-        completion_params = {
-            "model": kwargs.get("model", self.model),
-            "temperature": kwargs.get("temperature", self.settings.temperature),
-            "top_p": kwargs.get("top_p", self.settings.top_p),
-            "max_tokens": kwargs.get("max_tokens", self.settings.max_tokens),
-            "messages": messages,
-        }
-
-        completion_func = chatter(self.client)
-        return completion_func(self.client, completion_params)
-
-    def create_structured_completion(
-        self,
-        messages: list[dict],
-        response_model: Type[BaseModel],
-        **kwargs,
-    ) -> Any:
-        completion_params = {
-            "model": kwargs.get("model", self.model),
-            "temperature": kwargs.get("temperature", self.settings.temperature),
-            "top_p": kwargs.get("top_p", self.settings.top_p),
-            "max_tokens": kwargs.get("max_tokens", self.settings.max_tokens),
-            "messages": messages,
-        }
-        patched_client = self._get_patched_client()
-        return patched_client.chat.completions.create(
-            response_model=response_model, **completion_params
-        )
+    return ChatModel(provider, model)
