@@ -4,14 +4,11 @@ from typing import Any, Callable, Optional, Protocol, Type
 
 import instructor
 from anthropic import Anthropic
-from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
 
 from .settings import get_settings
 from .utils import format_anthropic_image_content, format_openai_image_content
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +167,11 @@ def init_chat_model(
     model: Optional[str] = None, provider: Optional[str] = None
 ) -> ChatModelProtocol:
     provider = provider or get_settings().default_provider
+    if not provider:
+        raise ValueError("Provider must be specified or set in DEFAULT_PROVIDER env variable.")
     model = model or get_settings().default_model
+    if not model:
+        raise ValueError("Model must be specified or set in DEFAULT_MODEL env variable.")
 
     logger.debug(f"Initializing chat model with provider: {provider}, model: {model}")
 

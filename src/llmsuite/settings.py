@@ -1,8 +1,13 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Centralize env file path
+root_dir = Path(__file__).parent.parent.parent
+env_file_path = root_dir / ".env"
 
 
 class PromptSettings(BaseSettings):
@@ -10,64 +15,55 @@ class PromptSettings(BaseSettings):
 
 
 class LLMProviderSettings(BaseSettings):
-    temperature: float = 0.7
-    top_p: float = 1.0
-    max_tokens: Optional[int] = 1024
+    temperature: float | None = None
+    max_tokens: int | None = None
+    top_p: float | None = None
+    max_retries: int = 3
 
-    model_config = SettingsConfigDict(env_prefix="DEFAULT_")
+    model_config = SettingsConfigDict(
+        env_file=env_file_path, env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 class OpenAISettings(LLMProviderSettings):
-    api_key: str = ""
+    api_key: str | None = Field(alias="OPENAI_API_KEY", default=None)
     base_url: str = "https://api.openai.com/v1"
-
-    model_config = SettingsConfigDict(env_prefix="OPENAI_")
 
 
 class AnthropicSettings(LLMProviderSettings):
-    api_key: str = ""
-
-    model_config = SettingsConfigDict(env_prefix="ANTHROPIC_")
+    api_key: str | None = Field(alias="ANTHROPIC_API_KEY", default=None)
 
 
 class TogetherAISettings(LLMProviderSettings):
-    api_key: str = ""
+    api_key: str | None = Field(alias="TOGETHER_API_KEY", default=None)
     base_url: str = "https://api.together.xyz/v1"
-
-    model_config = SettingsConfigDict(env_prefix="TOGETHER_")
 
 
 class PerplexitySettings(LLMProviderSettings):
-    api_key: str = ""
+    api_key: str | None = Field(alias="PERPLEXITY_API_KEY", default=None)
     base_url: str = "https://api.perplexity.ai"
-
-    model_config = SettingsConfigDict(env_prefix="PERPLEXITY_")
 
 
 class GroqSettings(LLMProviderSettings):
-    api_key: str = ""
+    api_key: str | None = Field(alias="GROQ_API_KEY", default=None)
     base_url: str = "https://api.groq.com/openai/v1"
-
-    model_config = SettingsConfigDict(env_prefix="GROQ_")
 
 
 class OllamaSettings(LLMProviderSettings):
     api_key: str = "ollama"
     base_url: str = "http://localhost:11434/v1"
 
-    model_config = SettingsConfigDict(env_prefix="OLLAMA_")
-
 
 class LMStudioSettings(LLMProviderSettings):
     api_key: str = "lmstudio"
     base_url: str = "http://localhost:1234/v1"
 
-    model_config = SettingsConfigDict(env_prefix="LMSTUDIO_")
-
 
 class Settings(BaseSettings):
-    default_provider: Optional[str] = None
-    default_model: Optional[str] = None
+    default_provider: str | None = Field(alias="DEFAULT_PROVIDER", default=None)
+    default_model: Optional[str] = Field(alias="DEFAULT_MODEL", default=None)
+
+    # Provider-specific settings
     prompt: PromptSettings = PromptSettings()
     openai: OpenAISettings = OpenAISettings()
     ollama: OllamaSettings = OllamaSettings()
@@ -76,6 +72,10 @@ class Settings(BaseSettings):
     lmstudio: LMStudioSettings = LMStudioSettings()
     perplexity: PerplexitySettings = PerplexitySettings()
     together: TogetherAISettings = TogetherAISettings()
+
+    model_config = SettingsConfigDict(
+        env_file=env_file_path, env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 @lru_cache
