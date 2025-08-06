@@ -4,7 +4,7 @@ import tempfile
 
 import pytest
 
-from llmsuite.prompts.prompt_manager import PromptManager
+from llmsuite.prompts import get_prompt
 
 
 @pytest.fixture
@@ -37,25 +37,6 @@ Hello, {{ name }}! This is a test prompt."""
 
     # Cleanup
     shutil.rmtree(temp_dir)
-
-
-@pytest.fixture
-def project_template_dir(temp_prompts_dir):
-    """Copy the project's actual template.j2 to the temp directory."""
-    # Get the path to the project's prompts directory
-    project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    project_template_path = os.path.join(project_dir, "prompts", "template.j2")
-
-    # Copy the template to the temp directory if it exists
-    if os.path.exists(project_template_path):
-        with open(project_template_path, "r") as src:
-            template_content = src.read()
-            with open(
-                os.path.join(temp_prompts_dir, "project_template.j2"), "w"
-            ) as dst:
-                dst.write(template_content)
-
-    return temp_prompts_dir
 
 
 @pytest.fixture
@@ -94,26 +75,29 @@ Thank you for using our service!"""
     return temp_prompts_dir
 
 
-class TestPromptManager:
-    def test_template_filling(self, temp_prompts_dir):
-        """Test if the class correctly fills up the template with variables."""
-        # Setup
-        manager = PromptManager(templates_dir=temp_prompts_dir)
+@pytest.fixture
+def project_template_dir():
+    """Get the path to the project's actual template.j2 file."""
+    # Get the path to the project's prompts directory
+    project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    prompts_dir = os.path.join(project_dir, "prompts")
+    return prompts_dir
 
+
+class TestPrompts:
+    def test_template_filling(self, temp_prompts_dir):
+        """Test if the function correctly fills up the template with variables."""
         # Get prompt and compile it
-        prompt = manager.get_prompt("test_template")
+        prompt = get_prompt("test_template", templates_dir=temp_prompts_dir)
         filled_prompt = prompt.compile(name="John")
 
         # Assert
         assert "Hello, John! This is a test prompt." in filled_prompt
 
     def test_frontmatter_parsing(self, temp_prompts_dir):
-        """Test if the prompt manager correctly parses YAML frontmatter data."""
-        # Setup
-        manager = PromptManager(templates_dir=temp_prompts_dir)
-
+        """Test if the prompt system correctly parses YAML frontmatter data."""
         # Get prompt with metadata
-        prompt = manager.get_prompt("test_template")
+        prompt = get_prompt("test_template", templates_dir=temp_prompts_dir)
 
         # Assert frontmatter data was parsed correctly
         assert prompt.type == "system"
@@ -126,12 +110,9 @@ class TestPromptManager:
         assert prompt.config["model"] == "test-model"
 
     def test_raw_prompt_display(self, temp_prompts_dir):
-        """Test if the prompt manager properly shows the raw prompt."""
-        # Setup
-        manager = PromptManager(templates_dir=temp_prompts_dir)
-
+        """Test if the prompt system properly shows the raw prompt."""
         # Get prompt
-        prompt = manager.get_prompt("test_template")
+        prompt = get_prompt("test_template", templates_dir=temp_prompts_dir)
 
         # Expected content - the text after the frontmatter section
         expected_content = "Hello, {{ name }}! This is a test prompt."
@@ -139,79 +120,55 @@ class TestPromptManager:
         # Assert raw prompt content (strip to handle any potential whitespace)
         assert prompt.prompt.strip() == expected_content.strip()
 
-    def test_templates_listing(self, temp_prompts_dir):
-        """Test if the prompt manager correctly lists available templates."""
-        # Setup
-        manager = PromptManager(templates_dir=temp_prompts_dir)
-
-        # Assert
-        assert "test_template" in manager.templates
-
-    def test_create_prompt(self, temp_prompts_dir):
-        """Test if the prompt manager can create a new prompt."""
-        # Setup
-        manager = PromptManager(templates_dir=temp_prompts_dir)
-
-        # Create a new prompt
-        prompt_content = "This is a {{ descriptor }} prompt."
-        manager.create_prompt(
-            name="new_template",
-            prompt_content=prompt_content,
-            type="user",
-            author="Test Creator",
-            labels=["new"],
-            tags=["dynamic"],
-            config={"temperature": 0.5},
-        )
-
-        # Get the created prompt
-        prompt = manager.get_prompt("new_template")
-
-        # Assert
-        assert prompt.name == "new_template"
-        assert prompt.prompt.strip() == prompt_content.strip()
-        assert prompt.type == "user"
-        assert prompt.author == "Test Creator"
-        assert "new" in prompt.labels
-        assert "dynamic" in prompt.tags
-        assert prompt.config["temperature"] == 0.5
-
-        # Test filling the newly created template
-        filled_prompt = prompt.compile(descriptor="dynamic")
-        assert filled_prompt == "This is a dynamic prompt."
-
-    def test_project_template(self, project_template_dir):
-        """Test with the actual project template.j2 file."""
-        # Setup
-        manager = PromptManager(templates_dir=project_template_dir)
-
+    def test_project_template_evaluation(self, project_template_dir):
+        """Test the actual project template.j2 file evaluation and metadata parsing."""
         # Get the project template
-        prompt = manager.get_prompt("project_template")
+        prompt = get_prompt("template", templates_dir=project_template_dir)
 
         # Assert frontmatter data was parsed correctly
         assert prompt.type == "system"
         assert prompt.version == 1
         assert prompt.author == "Marek Piotr Mysior"
         assert "latest" in prompt.labels
-        assert "search" in prompt.tags
-        assert "web" in prompt.tags
-        assert prompt.config["temperature"] == 0.0
-        assert prompt.config["model"] == "gpt-4o-mini"
+        assert "tag1" in prompt.tags
+        assert "tag2" in prompt.tags
+        assert prompt.config["temperature"] == 0.1
+        assert prompt.config["model"] == "gpt-4.1"
 
-        # Assert raw prompt content
-        assert prompt.prompt.strip() == "PROMPT GOES HERE"
+        # Check that json_schema is properly parsed
+        assert "json_schema" in prompt.config
+        json_schema = prompt.config["json_schema"]
+        assert json_schema["name"] == "response_model"
+        assert json_schema["strict"] is True
+        assert "schema" in json_schema
+        schema = json_schema["schema"]
+        assert schema["type"] == "object"
+        assert "reasoning" in schema["properties"]
+        assert "response" in schema["properties"]
+        assert schema["required"] == ["reasoning", "response"]
 
-        # Test that we can compile it (even though it doesn't have variables)
-        filled_prompt = prompt.compile()
-        assert filled_prompt == "PROMPT GOES HERE"
+        # Assert raw prompt content includes the expected structure
+        assert "[Snippet Activated: Prompt Name]" in prompt.prompt
+        assert "<objective>" in prompt.prompt
+        assert "<context>" in prompt.prompt
+        assert "<rules>" in prompt.prompt
+        assert "{{ variable_name }}" in prompt.prompt
+
+        # Test that we can compile it without variables
+        filled_prompt = prompt.compile(variable_name="example_value")
+        assert "[Snippet Activated: Prompt Name]" in filled_prompt
+        assert "A key objective for the LLM" in filled_prompt
+        assert "Any information that is relevant to the task" in filled_prompt
+        assert "OVERRIDE all default behaviour" in filled_prompt
+
+        # Test that we can compile it with variables (the template mentions {{ variable_name }} format)
+        filled_prompt_with_vars = prompt.compile(variable_name="test_value")
+        assert "test_value" in filled_prompt_with_vars
 
     def test_extended_template_with_variables(self, extended_template_dir):
         """Test an extended version of the template with Jinja variables and control structures."""
-        # Setup
-        manager = PromptManager(templates_dir=extended_template_dir)
-
         # Get the extended template
-        prompt = manager.get_prompt("extended_template")
+        prompt = get_prompt("extended_template", templates_dir=extended_template_dir)
 
         # Assert frontmatter data was parsed correctly
         assert prompt.type == "system"
@@ -229,10 +186,7 @@ class TestPromptManager:
         )
 
         assert "You are a helpful AI assistant." in filled_prompt
-        assert (
-            "Your task is to answer questions for the user named Alice."
-            in filled_prompt
-        )
+        assert "Your task is to answer questions for the user named Alice." in filled_prompt
         assert "Please follow these instructions:" in filled_prompt
         assert "Thank you for using our service!" in filled_prompt
 
