@@ -1,4 +1,3 @@
-from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, Type
 
@@ -14,22 +13,18 @@ from .utils import format_anthropic_image_content, format_openai_image_content
 load_dotenv()
 
 
-class MessageBuilder(Protocol):
-    def __call__(
+type LLMClient = OpenAI | Anthropic
+type CompletionFunc = Callable[[LLMClient, dict], str]
+
+
+class ChatModelProtocol(Protocol):
+    def build_messages(
         self, text: str, image_path: Optional[Path] = None, system_prompt: Optional[str] = None
     ) -> list[dict]: ...
 
+    def chat(self, messages: list[dict], **kwargs) -> str: ...
 
-class ChatFunc(Protocol):
-    def __call__(self, messages: list[dict], **kwargs) -> str: ...
-
-
-class ExtractFunc(Protocol):
-    def __call__(self, messages: list[dict], schema: Type[BaseModel], **kwargs) -> Any: ...
-
-
-type LLMClient = OpenAI | Anthropic
-type CompletionFunc = Callable[[LLMClient, dict], str]
+    def extract(self, messages: list[dict], schema: Type[BaseModel], **kwargs) -> Any: ...
 
 
 # ------------------------------------------------------------------------------
@@ -93,8 +88,8 @@ def get_client(provider: str) -> LLMClient:
 
 
 def build_messages(
-    text: str,
     provider: str,
+    text: str,
     image_path: Optional[Path] = None,
     system_prompt: Optional[str] = None,
 ) -> list[dict]:
@@ -159,17 +154,26 @@ def extract(
 # ------------------------------------------------------------------------------
 
 
-def init_chat_model(model: Optional[str] = None, provider: Optional[str] = None):
+def init_chat_model(
+    model: Optional[str] = None, provider: Optional[str] = None
+) -> ChatModelProtocol:
     provider = provider or get_settings().default_provider
     model = model or get_settings().default_model
 
     class ChatModel:
         def __init__(self, provider: str, model: str):
-            self._provider: str = provider
-            self._model: str = model
+            self._provider = provider
+            self._model = model
 
-            self.build_messages: MessageBuilder = partial(build_messages, provider=self._provider)
-            self.chat: ChatFunc = partial(chat, provider=self._provider, model=self._model)
-            self.extract: ExtractFunc = partial(extract, provider=self._provider, model=self._model)
+        def build_messages(
+            self, text: str, image_path: Optional[Path] = None, system_prompt: Optional[str] = None
+        ) -> list[dict]:
+            return build_messages(self._provider, text, image_path, system_prompt)
+
+        def chat(self, messages: list[dict], **kwargs) -> str:
+            return chat(messages, self._model, self._provider, **kwargs)
+
+        def extract(self, messages: list[dict], schema: Type[BaseModel], **kwargs) -> Any:
+            return extract(messages, schema, self._model, self._provider, **kwargs)
 
     return ChatModel(provider, model)
