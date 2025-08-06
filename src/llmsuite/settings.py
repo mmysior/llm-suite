@@ -61,7 +61,7 @@ class LMStudioSettings(LLMProviderSettings):
 
 class Settings(BaseSettings):
     default_provider: str | None = Field(alias="DEFAULT_PROVIDER", default=None)
-    default_model: Optional[str] = Field(alias="DEFAULT_MODEL", default=None)
+    default_model: str | None = Field(alias="DEFAULT_MODEL", default=None)
 
     # Provider-specific settings
     prompt: PromptSettings = PromptSettings()
