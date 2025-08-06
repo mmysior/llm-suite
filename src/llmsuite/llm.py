@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, Type
 
@@ -11,6 +12,8 @@ from .settings import get_settings
 from .utils import format_anthropic_image_content, format_openai_image_content
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 type LLMClient = OpenAI | Anthropic
@@ -38,6 +41,7 @@ def chatter(client: LLMClient) -> CompletionFunc:
             completion = client.chat.completions.create(**completion_params)
             return completion.choices[0].message.content or ""
         except Exception as e:
+            logger.error(f"OpenAI completion failed: {e}")
             raise RuntimeError(f"OpenAI completion failed: {e}")
 
     def get_anthropic_completion(client: Anthropic, completion_params: dict) -> str:
@@ -52,6 +56,7 @@ def chatter(client: LLMClient) -> CompletionFunc:
             completion = client.messages.create(messages=messages, **params)
             return completion.content[0].text
         except Exception as e:
+            logger.error(f"Anthropic completion failed: {e}")
             raise RuntimeError(f"Anthropic completion failed: {e}")
 
     if isinstance(client, OpenAI):
@@ -59,6 +64,7 @@ def chatter(client: LLMClient) -> CompletionFunc:
     elif isinstance(client, Anthropic):
         return get_anthropic_completion
     else:
+        logger.error(f"Unsupported client type: {type(client)}")
         raise ValueError(f"Unsupported client type: {type(client)}")
 
 
@@ -82,8 +88,9 @@ def get_client(provider: str) -> LLMClient:
 
     initializer = client_initializers.get(provider)
     if initializer:
-        print(f"Initializing {provider} client")
+        logger.debug(f"Initializing {provider} client")
         return initializer(settings)
+    logger.error(f"Unsupported LLM provider: {provider}")
     raise ValueError(f"Unsupported LLM provider: {provider}")
 
 
@@ -110,6 +117,7 @@ def build_messages(
 
 
 def chat(messages: list[dict], model: str, provider: str, **kwargs) -> str:
+    logger.debug(f"Starting chat with model: {model}, provider: {provider}")
     settings = getattr(get_settings(), provider)
     client = get_client(provider)
 
@@ -128,6 +136,9 @@ def chat(messages: list[dict], model: str, provider: str, **kwargs) -> str:
 def extract(
     messages: list[dict], schema: Type[BaseModel], model: str, provider: str, **kwargs
 ) -> Any:
+    logger.debug(
+        f"Starting extraction with model: {model}, provider: {provider}, schema: {schema.__name__}"
+    )
     settings = getattr(get_settings(), provider)
     client = get_client(provider)
 
@@ -144,6 +155,7 @@ def extract(
     elif isinstance(client, Anthropic):
         patched_client = instructor.from_anthropic(client)
     else:
+        logger.error(f"Unsupported client for patching: {type(client)}")
         raise ValueError(f"Unsupported client for patching: {type(client)}")
 
     return patched_client.chat.completions.create(response_model=schema, **completion_params)
@@ -159,6 +171,8 @@ def init_chat_model(
 ) -> ChatModelProtocol:
     provider = provider or get_settings().default_provider
     model = model or get_settings().default_model
+
+    logger.debug(f"Initializing chat model with provider: {provider}, model: {model}")
 
     class ChatModel:
         def __init__(self, provider: str, model: str):
