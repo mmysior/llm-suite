@@ -9,15 +9,28 @@ A Python package for streamlined interactions with various Large Language Model 
 - 📝 **Template Management**: Organize and reuse prompts with Jinja2 templating
 - ⚙️ **Configurable**: Easily adjust model parameters and settings
 
+# 🔧 LLM Suite
+
+A Python package for streamlined interactions with various Large Language Model (LLM) providers, featuring structured output parsing and template-based prompt management.
+
+## Features
+
+- 🤖 **Multi-Provider Support**: Compatible with OpenAI, Anthropic, Ollama, Groq, Perplexity, Together, and LMStudio
+- 📋 **Structured Output**: Parse LLM responses directly into Pydantic models using Instructor
+- 📝 **Template Management**: Organize and reuse prompts with Jinja2 templating
+- 🖼️ **Image Support**: Send images to vision-enabled models
+- ⚙️ **Configurable**: Easily adjust model parameters and settings
+- 🔄 **CLI Tool**: Built-in command line interface for quick interactions
+
 ## Getting Started
 
-Install the package using pip
+Install the package using pip:
 
 ```bash
 pip install llm-suite
 ```
 
-Alternatively, install from the source
+Alternatively, install from the source:
 
 ```bash
 git clone https://github.com/mmysior/llm-suite.git
@@ -27,11 +40,9 @@ pip install -e .
 
 ## Configuration
 
-Configuration is handled through environment variables. Update your `.env` file with your API keys:
+Configuration is handled through environment variables. Copy the [`.env.example`](.env.example ) file to [`.env`](.env ) and update with your API keys:
 
 ```env
-TEMPLATES_DIR="./prompts"
-
 # LLM settings
 DEFAULT_PROVIDER="openai"
 DEFAULT_MODEL="gpt-4.1-mini"
@@ -40,40 +51,43 @@ DEFAULT_TEMPERATURE=0.7
 DEFAULT_TOP_P=1.0
 DEFAULT_MAX_TOKENS=2048
 
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-PERPLEXITY_API_KEY=
-GROQ_API_KEY=
+# Provider-specific settings
+OPENAI_API_KEY=your_openai_key_here
+ANTHROPIC_API_KEY=your_anthropic_key_here
+PERPLEXITY_API_KEY=your_perplexity_key_here
+GROQ_API_KEY=your_groq_key_here
+TOGETHER_API_KEY=your_together_key_here
 TOGETHER_API_KEY=
 
 OLLAMA_BASE_URL=
 LMSTUDIO_BASE_URL=
 ```
 
-Available configuration options:
-- `TEMPLATES_DIR` - Custom directory for prompt templates (defaults to package's templates directory).
-- `DEFAULT_PROVIDER` - A provider used if no other is explicitly defined at LLMSuite initialization.
-- `DEFAULT MODEL` - A default model to use when calling methods on LLMSuite class.
 
 ## Usage
 
-### LLM Service
+### Basic Usage
 
 ```python
-from llmsuite import LLMSuite
+import llmsuite
 
-# Initialize with your preferred provider (the value will be loaded from the .env file)
-llm = LLMSuite() # Loads the provider as specified in the .env file
+# Initialize a chat model
+llm = llmsuite.init_chat_model()  # Uses DEFAULT_PROVIDER and DEFAULT_MODEL from .env
+# Or specify explicitly
+llm = llmsuite.init_chat_model(provider="anthropic", model="claude-3-opus-20240229")
 
-# Simple chat completion
-messages = [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "Explain quantum computing briefly."}
-]
-response = llm.create_chat_completion(messages) # Uses the default model specified in .env file
+# Simple conversation
+messages = llm.build_messages(
+    text="Explain quantum computing briefly", 
+    system_prompt="You are a helpful assistant."
+)
+response = llm.chat(messages)
 print(response)
+```
 
-# Structured output with Pydantic
+### Structured Output with Pydantic
+
+```python
 from pydantic import BaseModel
 
 class MovieRecommendation(BaseModel):
@@ -81,47 +95,63 @@ class MovieRecommendation(BaseModel):
     year: int
     why: str
 
-messages = [
-    {"role": "system", "content": "You recommend movies."},
-    {"role": "user", "content": "Recommend a sci-fi movie."}
-]
-result = llm.create_structured_completion(
+messages = llm.build_messages(
+    text="Recommend a sci-fi movie", 
+    system_prompt="You recommend movies."
+)
+result = llm.extract(
     messages=messages,
-    response_model=MovieRecommendation
+    schema=MovieRecommendation
 )
 print(f"Title: {result.title}, Year: {result.year}")
 ```
 
-### Prompt Manager
+### Working with Images
+
+```python
+from pathlib import Path
+
+# Send an image to a vision model
+messages = llm.build_messages(
+    text="What's in this image?",
+    image_path=Path("path/to/image.jpg")
+)
+response = llm.chat(messages)
+```
+
+### Prompt Templates
 
 ```python
 from llmsuite import get_prompt
 
-# Get a prompt template
-prompt get_prompt("my_template")
+# Get a prompt template from your templates directory
+prompt = get_prompt("my_template")
 
 # Render the template with variables
 rendered_prompt = prompt.compile(variable1="value1", variable2="value2")
 
-# Use the rendered prompt with LLM service
-messages = [{"role": prompt.type, "content": rendered_prompt}]
-llm = LLMService(provider="openai")
-response = llm.create_chat_completion(messages)
+# Use the rendered prompt
+messages = llm.build_messages(text="Query", system_prompt=rendered_prompt)
+response = llm.chat(messages)
 ```
 
 ## Creating Prompt Templates
 
-Create Jinja2 templates with frontmatter metadata:
+Create Jinja2 templates with YAML frontmatter metadata:
 
 ```jinja
 ---
 type: system
 version: 1
+author: Your Name
 labels: 
-    - "classification",
-    - "sentiment"
+    - classification
+    - sentiment
 tags:
-    - "example"
+    - example
+config:
+    temperature: 0.1
+    model: gpt-4
 ---
 You are a sentiment analyzer that classifies text as positive, negative, or neutral.
 
@@ -129,14 +159,28 @@ Please analyze the following text:
 {{ text }}
 ```
 
+## Command Line Interface
+
+LLM Suite includes a CLI tool:
+
+```bash
+# Simple chat
+llmsuite chat "What is the capital of France?"
+
+# Using specific model and provider
+llmsuite chat "Explain relativity" --model gpt-4 --provider openai --temperature 0.2
+
+# View current configuration
+llmsuite config
+```
+
 ## Advanced Configuration
 
 For more control, you can customize model parameters:
 
 ```python
-response = llm.create_chat_completion(
+response = llm.chat(
     messages=messages,
-    model="gpt-4",
     temperature=0.2,
     max_tokens=500
 )
